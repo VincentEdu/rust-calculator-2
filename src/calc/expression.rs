@@ -1,3 +1,4 @@
+use core::borrow;
 use std::{borrow::Borrow, collections::HashMap};
 use super::functions::*;
 use lazy_static::lazy_static;
@@ -38,7 +39,20 @@ impl Expression {
     }
 }
 
+struct ExpUnitBase {
+    pub exp_idx: i32,
+}
+
+impl ExpUnitBase {
+    pub fn new() -> Self {
+        Self {
+            exp_idx: -1
+        }
+    }
+}
+
 struct ExpOpBase {
+    pub unitbase: ExpUnitBase,
     pub id: FunctionId,
     pub precedence: i32,
 }
@@ -56,12 +70,14 @@ struct UnaryFunctionBase {
 
 
 struct ConstantUnit {
+    pub unitbase: ExpUnitBase,
     pub value: f64,
 }
 
 impl ConstantUnit {
     pub fn new(value: f64) -> Self {
         Self {
+            unitbase: ExpUnitBase::new(),
             value,
         }
     }
@@ -73,6 +89,20 @@ impl ExcutableUnit for ConstantUnit {
     }
 }
 
+pub trait ExpUnit {
+    fn to_string(&self) -> String;
+    fn exp_name(&self) -> &str;
+    fn get_exp_unit_base(&self) -> &ExpUnitBase;
+    fn get_exp_unit_base_mut(&mut self) -> &mut ExpUnitBase;
+
+    fn get_exp_idx(&self) -> i32 {
+        self.get_exp_unit_base().exp_idx
+    }
+    fn set_exp_idx(&mut self, idx: i32) {
+        self.get_exp_unit_base_mut().exp_idx = idx;
+    }
+}
+
 impl ExpUnit for ConstantUnit {
     fn to_string(&self) -> String {
         self.value.to_string()
@@ -80,6 +110,14 @@ impl ExpUnit for ConstantUnit {
 
     fn exp_name(&self) -> &str {
         "constant"
+    }
+
+    fn get_exp_unit_base(&self) -> &ExpUnitBase {
+        &self.unitbase
+    }
+
+    fn get_exp_unit_base_mut(&mut self) -> &mut ExpUnitBase {
+        &mut self.unitbase
     }
 }
 
@@ -89,6 +127,7 @@ impl BinaryFunctionBase {
     pub fn new(id: FunctionId, precedence: i32) -> Self {
         Self {
             unitbase: ExpOpBase {
+                unitbase: ExpUnitBase::new(),
                 id,
                 precedence,
             },
@@ -103,18 +142,13 @@ impl UnaryFunctionBase {
     pub fn new(id: FunctionId, precedence: i32) -> Self {
         Self {
             unitbase: ExpOpBase {
+                unitbase: ExpUnitBase::new(),
                 id,
                 precedence
             },
             _1: None,
         }
     }
-}
-
-//// traits
-pub trait ExpUnit {
-    fn to_string(&self) -> String;
-    fn exp_name(&self) -> &str;
 }
 
 pub trait ExcutableUnit : ExpUnit {
@@ -249,7 +283,7 @@ pub trait UnaryFunctionUnit: ExpOpUnit {
                 self.exp_name().to_string()
             },
             Some(op_1) => {
-                if op_1.exp_name() == "()" {
+                if op_1.exp_name() == EXP_UNIT_NAME_OPEN_BRK {
                     format!("{}{}", self.exp_name(), op_1.to_string())
                 }
                 else {
@@ -311,6 +345,7 @@ impl ExpOpUnit for CollectOperator {
     fn as_excutable_unit(&mut self) -> Box<dyn ExcutableUnit> {
         let mut new_instance = CollectOperator::new();
         new_instance.base._1 = self.base._1.take();
+        new_instance.set_exp_idx(self.get_exp_idx());
         Box::new(new_instance)
     }
 }
@@ -328,7 +363,7 @@ impl ExpUnit for CollectOperator {
 
         match _1 {
             None => {
-                self.exp_name().to_string()
+                "(".to_string()
             },
             Some(op_1) => {                
                 format!("({})", op_1.to_string())
@@ -338,6 +373,14 @@ impl ExpUnit for CollectOperator {
 
     fn exp_name(&self) -> &str {
         EXP_UNIT_NAME_OPEN_BRK
+    }
+
+    fn get_exp_unit_base(&self) -> &ExpUnitBase {
+        &self.base.unitbase.unitbase
+    }
+
+    fn get_exp_unit_base_mut(&mut self) -> &mut ExpUnitBase {
+        &mut self.base.unitbase.unitbase
     }
 }
 
@@ -389,6 +432,7 @@ impl ExpOpUnit for SinFunc {
     fn as_excutable_unit(&mut self) -> Box<dyn ExcutableUnit> {
         let mut new_instance = SinFunc::new();
         new_instance.base._1 = self.base._1.take();
+        new_instance.set_exp_idx(self.get_exp_idx());
         Box::new(new_instance)
     }
 }
@@ -406,6 +450,14 @@ impl ExpUnit for SinFunc {
 
     fn exp_name(&self) -> &str {
         EXP_UNIT_NAME_SIN
+    }
+
+    fn get_exp_unit_base(&self) -> &ExpUnitBase {
+        &self.base.unitbase.unitbase
+    }
+
+    fn get_exp_unit_base_mut(&mut self) -> &mut ExpUnitBase {
+        &mut self.base.unitbase.unitbase
     }
 }
 
@@ -457,6 +509,7 @@ impl ExpOpUnit for CosFunc {
     fn as_excutable_unit(&mut self) -> Box<dyn ExcutableUnit> {
         let mut new_instance = CosFunc::new();
         new_instance.base._1 = self.base._1.take();
+        new_instance.set_exp_idx(self.get_exp_idx());
         Box::new(new_instance)
     }
 }
@@ -474,6 +527,14 @@ impl ExpUnit for CosFunc {
 
     fn exp_name(&self) -> &str {
         EXP_UNIT_NAME_COS
+    }
+
+    fn get_exp_unit_base(&self) -> &ExpUnitBase {
+        &self.base.unitbase.unitbase
+    }
+
+    fn get_exp_unit_base_mut(&mut self) -> &mut ExpUnitBase {
+        &mut self.base.unitbase.unitbase
     }
 }
 
@@ -525,6 +586,7 @@ impl ExpOpUnit for TanFunc {
     fn as_excutable_unit(&mut self) -> Box<dyn ExcutableUnit> {
         let mut new_instance = TanFunc::new();
         new_instance.base._1 = self.base._1.take();
+        new_instance.set_exp_idx(self.get_exp_idx());
         Box::new(new_instance)
     }
 }
@@ -542,6 +604,14 @@ impl ExpUnit for TanFunc {
 
     fn exp_name(&self) -> &str {
         EXP_UNIT_NAME_TAN
+    }
+
+    fn get_exp_unit_base(&self) -> &ExpUnitBase {
+        &self.base.unitbase.unitbase
+    }
+
+    fn get_exp_unit_base_mut(&mut self) -> &mut ExpUnitBase {
+        &mut self.base.unitbase.unitbase
     }
 }
 
@@ -593,6 +663,7 @@ impl ExpOpUnit for SquareFunc {
     fn as_excutable_unit(&mut self) -> Box<dyn ExcutableUnit> {
         let mut new_instance = SquareFunc::new();
         new_instance.base._1 = self.base._1.take();
+        new_instance.set_exp_idx(self.get_exp_idx());
         Box::new(new_instance)
     }
 }
@@ -605,11 +676,29 @@ impl ExcutableUnit for SquareFunc {
 
 impl ExpUnit for SquareFunc {
     fn to_string(&self) -> String {
-        UnaryFunctionUnit::to_string(self)
+        let base = self.get_func_base();
+        let _1 = &base._1;
+
+        match _1 {
+            None => {
+                self.exp_name().to_string()
+            },
+            Some(op_1) => {
+                format!("{}{}", op_1.to_string(), self.exp_name())
+            }
+        }
     }
 
     fn exp_name(&self) -> &str {
         EXP_UNIT_NAME_SQR
+    }
+
+    fn get_exp_unit_base(&self) -> &ExpUnitBase {
+        &self.base.unitbase.unitbase
+    }
+
+    fn get_exp_unit_base_mut(&mut self) -> &mut ExpUnitBase {
+        &mut self.base.unitbase.unitbase
     }
 }
 
@@ -661,6 +750,7 @@ impl ExpOpUnit for SqrtFunc {
     fn as_excutable_unit(&mut self) -> Box<dyn ExcutableUnit> {
         let mut new_instance = SqrtFunc::new();
         new_instance.base._1 = self.base._1.take();
+        new_instance.set_exp_idx(self.get_exp_idx());
         Box::new(new_instance)
     }
 }
@@ -678,6 +768,14 @@ impl ExpUnit for SqrtFunc {
 
     fn exp_name(&self) -> &str {
         EXP_UNIT_NAME_SQRT
+    }
+
+    fn get_exp_unit_base(&self) -> &ExpUnitBase {
+        &self.base.unitbase.unitbase
+    }
+
+    fn get_exp_unit_base_mut(&mut self) -> &mut ExpUnitBase {
+        &mut self.base.unitbase.unitbase
     }
 }
 
@@ -729,6 +827,7 @@ impl ExpOpUnit for InvFunc {
     fn as_excutable_unit(&mut self) -> Box<dyn ExcutableUnit> {
         let mut new_instance = InvFunc::new();
         new_instance.base._1 = self.base._1.take();
+        new_instance.set_exp_idx(self.get_exp_idx());
         Box::new(new_instance)
     }
 }
@@ -746,6 +845,14 @@ impl ExpUnit for InvFunc {
 
     fn exp_name(&self) -> &str {
         EXP_UNIT_NAME_INV
+    }
+
+    fn get_exp_unit_base(&self) -> &ExpUnitBase {
+        &self.base.unitbase.unitbase
+    }
+
+    fn get_exp_unit_base_mut(&mut self) -> &mut ExpUnitBase {
+        &mut self.base.unitbase.unitbase
     }
 }
 
@@ -804,6 +911,7 @@ impl ExpOpUnit for AddOperator {
         let mut new_instance = AddOperator::new();
         new_instance.base._1 = self.base._1.take();
         new_instance.base._2 = self.base._2.take();
+        new_instance.set_exp_idx(self.get_exp_idx());
         Box::new(new_instance)
     }
 }
@@ -815,6 +923,14 @@ impl ExpUnit for AddOperator {
 
     fn exp_name(&self) -> &str {
         EXP_UNIT_NAME_ADD
+    }
+
+    fn get_exp_unit_base(&self) -> &ExpUnitBase {
+        &self.base.unitbase.unitbase
+    }
+
+    fn get_exp_unit_base_mut(&mut self) -> &mut ExpUnitBase {
+        &mut self.base.unitbase.unitbase
     }
 }
 
@@ -873,6 +989,7 @@ impl ExpOpUnit for SubOperator {
         let mut new_instance = SubOperator::new();
         new_instance.base._1 = self.base._1.take();
         new_instance.base._2 = self.base._2.take();
+        new_instance.set_exp_idx(self.get_exp_idx());
         Box::new(new_instance)
     }
 }
@@ -884,6 +1001,14 @@ impl ExpUnit for SubOperator {
 
     fn exp_name(&self) -> &str {
         EXP_UNIT_NAME_SUB
+    }
+
+    fn get_exp_unit_base(&self) -> &ExpUnitBase {
+        &self.base.unitbase.unitbase
+    }
+
+    fn get_exp_unit_base_mut(&mut self) -> &mut ExpUnitBase {
+        &mut self.base.unitbase.unitbase
     }
 }
 
@@ -942,6 +1067,7 @@ impl ExpOpUnit for MulOperator {
         let mut new_instance = MulOperator::new();
         new_instance.base._1 = self.base._1.take();
         new_instance.base._2 = self.base._2.take();
+        new_instance.set_exp_idx(self.get_exp_idx());
         Box::new(new_instance)
     }
 }
@@ -953,6 +1079,14 @@ impl ExpUnit for MulOperator {
 
     fn exp_name(&self) -> &str {
         EXP_UNIT_NAME_MUL
+    }
+
+    fn get_exp_unit_base(&self) -> &ExpUnitBase {
+        &self.base.unitbase.unitbase
+    }
+
+    fn get_exp_unit_base_mut(&mut self) -> &mut ExpUnitBase {
+        &mut self.base.unitbase.unitbase
     }
 }
 
@@ -1015,6 +1149,7 @@ impl ExpOpUnit for DivOperator {
         let mut new_instance = DivOperator::new();
         new_instance.base._1 = self.base._1.take();
         new_instance.base._2 = self.base._2.take();
+        new_instance.set_exp_idx(self.get_exp_idx());
         Box::new(new_instance)
     }
 }
@@ -1027,10 +1162,20 @@ impl ExpUnit for DivOperator {
     fn exp_name(&self) -> &str {
         EXP_UNIT_NAME_DIV
     }
+
+    fn get_exp_unit_base(&self) -> &ExpUnitBase {
+        &self.base.unitbase.unitbase
+    }
+
+    fn get_exp_unit_base_mut(&mut self) -> &mut ExpUnitBase {
+        &mut self.base.unitbase.unitbase
+    }
 }
 
 
 pub struct ExpressionBuilder {
+    token_count: i32,
+    last_op_count: i32,
     operand_stack: Vec<Box<dyn ExcutableUnit>>,
     operator_stack: Vec<Box<dyn ExpOpUnit>>,
 }
@@ -1038,8 +1183,10 @@ pub struct ExpressionBuilder {
 impl ExpressionBuilder {
     pub fn new() -> Self {
         Self {
+            token_count: 0,
+            last_op_count: -2,
             operator_stack: Vec::new(),
-            operand_stack: Vec::new(),
+            operand_stack: Vec::new(),            
         }
     }
 
@@ -1051,14 +1198,18 @@ impl ExpressionBuilder {
         self.operator_stack.push(op);
     }
 
-    fn build_top_op_tree(&mut self) -> Result<Option<String>, String> {
+    fn build_top_op_tree(&mut self, lower_bound_idx: i32) -> Result<Option<String>, String> {
         let mut op = self.operator_stack.pop().unwrap();        
         let mut args = op.arg_count();
         while args > 0 {
             if self.operand_stack.len() == 0 {
                 return Err("Invalid expression".to_string());
-            }
+            }            
             let operand = self.operand_stack.pop().unwrap();
+            if lower_bound_idx >= 0 && operand.get_exp_idx() <= lower_bound_idx {
+                return Err("Invalid expression".to_string());
+            }
+
             op.push_operand(operand);
 
             args -= 1;
@@ -1075,9 +1226,12 @@ impl ExpressionBuilder {
     }
 
     pub fn build_tree_inside_bracket(&mut self) -> Result<Option<String>, String> {
+        let x = self.operator_stack.iter().find(|op| op.get_op_base().id == ID_OPEN_BRACKET);
+        let mut lower_bound_idx = if x.is_none() { -1 } else { x.unwrap().get_exp_idx() };
+
         while self.operator_stack.len() > 0 {
             let id = self.top_op().unwrap().get_op_base().id;
-            let x = self.build_top_op_tree();
+            let x = self.build_top_op_tree(lower_bound_idx);
             if x.is_err() {
                 return x;
             }
@@ -1087,39 +1241,49 @@ impl ExpressionBuilder {
         }
         Err("Missing open bracket".to_string())
     }
+    
 
-    pub fn push_functor(&mut self, name: String) -> Result<Option<String>, String> {
+    pub fn push_functor(&mut self, name: String, prefer_eval: bool) -> Result<Option<String>, String> {
+        self.token_count += 1;
+
         if name == EXP_UNIT_NAME_CLOSE_BRK { // close bracket
+            self.last_op_count = 1;
             return self.build_tree_inside_bracket();
         }
 
         let op_opt = EXP_OP_LIB.get_functor(&name);
         if op_opt.is_none() {
+            self.last_op_count = -1;
             return Err("No functor found".to_string());
         }
-        let op = op_opt.unwrap();
+        let mut op = op_opt.unwrap();        
+        op.set_exp_idx(self.token_count);
+        self.last_op_count = op.arg_count();
+        let op_base = op.get_op_base();
+
+        // if the operator is a unary operator, and the caller want to evaluate it now                
+        if prefer_eval && op.arg_count() == 1 && op_base.id != ID_OPEN_BRACKET {
+            self.push_op(op);
+            return self.build_top_op_tree(-1);
+        }
 
         let top_op = self.top_op();
         match top_op {
             Some(top) => {
-                let top_base = top.get_op_base();
-                let op_base = op.get_op_base();
+                let top_base = top.get_op_base();                
 
                 if op_base.id == ID_OPEN_BRACKET {
                     self.push_op(op);
                     return Ok(None);
                 }
 
-                if top_base.precedence > op_base.precedence {
-                    self.push_op(op);
-                    return Ok(None);                    
-                }
-                let x = self.build_top_op_tree();
-                if x.is_err() {
+                if top_base.precedence <= op_base.precedence {
+                    let x = self.build_top_op_tree(-1);
+                    self.push_op(op);            
                     return x;
                 }
                 self.push_op(op);
-                return x;
+                return Ok(None);
             },
             None => {
                 self.operator_stack.push(op);
@@ -1130,11 +1294,15 @@ impl ExpressionBuilder {
     }
 
     pub fn push_operand(&mut self, token: String) -> bool {
+        self.token_count += 1;
+        self.last_op_count = 1;
+
         let res = token.parse::<f64>();
         match res {
             Err(_) => false,
             Ok(value) => {
-                let operand = Box::new(ConstantUnit::new(value));
+                let mut operand = Box::new(ConstantUnit::new(value));
+                operand.set_exp_idx(self.token_count);
                 self.operand_stack.push(operand);
                 true
             }
@@ -1142,19 +1310,40 @@ impl ExpressionBuilder {
     }
 
     pub fn to_exp_string(&self) -> String {
-        let mut exp_str = String::new();        
-        for op in self.operand_stack.iter() {
-            exp_str.push_str(&op.to_string());
+        let mut exp_str = String::new();
+        let mut exp_indices: Vec<(bool, usize)> = Vec::with_capacity(self.operand_stack.len() + self.operator_stack.len());
+
+        for i in 0..self.operand_stack.len() {
+            exp_indices.push((true, i));
         }
-        for op in self.operator_stack.iter() {
-            exp_str.push_str(&op.to_string());
+        
+        for i in 0..self.operator_stack.len() {
+            exp_indices.push((false, i));
         }
+
+        exp_indices.sort_by(|a, b| {
+            let a_idx = a.1;
+            let b_idx = b.1;
+            let a_exp_idx = if a.0 { self.operand_stack[a_idx].get_exp_idx() } else { self.operator_stack[a_idx].get_exp_idx() };
+            let b_exp_idx = if b.0 { self.operand_stack[b_idx].get_exp_idx() } else { self.operator_stack[b_idx].get_exp_idx() };
+            a_exp_idx.cmp(&b_exp_idx)
+        });
+
+        for (is_operand, idx) in exp_indices {
+            if is_operand {
+                exp_str += &self.operand_stack[idx].to_string();
+            }
+            else {
+                exp_str += &self.operator_stack[idx].to_string();
+            }
+        }
+
         exp_str
     }
 
     pub fn finish(&mut self) -> Result<Expression, String> {
         while self.operator_stack.len() > 0 {
-            let x = self.build_top_op_tree();
+            let x = self.build_top_op_tree(-1);
             if x.is_err() {
                 return Err(x.err().unwrap());
             }
@@ -1172,6 +1361,11 @@ impl ExpressionBuilder {
             Some(op) => op.execute(),
             None => Err("Incomplete expression".to_string())            
         }
+    }
+
+    pub fn get_last_exp_token_arg_count(&self) -> i32 {
+        // work around
+        self.last_op_count
     }
 }
 

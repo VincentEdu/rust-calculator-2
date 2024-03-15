@@ -6,6 +6,13 @@ use std::rc::Rc;
 use calc::Calculator;
 use calc::Feature;
 
+use calc::EXP_UNIT_NAME_ADD;
+use calc::EXP_UNIT_NAME_DIV;
+use calc::EXP_UNIT_NAME_INV;
+use calc::EXP_UNIT_NAME_MUL;
+use calc::EXP_UNIT_NAME_SQR;
+use calc::EXP_UNIT_NAME_SQRT;
+use calc::EXP_UNIT_NAME_SUB;
 use druid::{
     theme, AppLauncher, Color, Data, Lens, LocalizedString, RenderContext, Widget, WidgetExt,
     WindowDesc,
@@ -176,11 +183,11 @@ fn flex_row<T: Data>(
 
 fn build_calc() -> impl Widget<AppData> {
     let lb_history = Label::new(|data: &String, _env: &_| data.clone())
-        .with_text_size(10.0)
+        .with_text_size(14.0)
         .lens(AppData::history)
         .padding(5.0);
     let lb_result = Label::new(|data: &String, _env: &_| data.clone())
-        .with_text_size(14.0)
+        .with_text_size(20.0)
         .lens(AppData::value)
         .padding(5.0);
     Flex::column()
@@ -205,9 +212,9 @@ fn build_calc() -> impl Widget<AppData> {
             flex_row(
                 op_button_label("(".to_string()),
                 op_button_label(")".to_string()),
-                op_button_label_id("⅟x".to_string(), "⅟".to_string()),
+                op_button_label_id("⅟x".to_string(), EXP_UNIT_NAME_INV.to_string()),
                 op_button_label( "π".to_string()),
-                op_button_label_id("÷".to_string(), "/".to_string()), //
+                op_button_label(EXP_UNIT_NAME_DIV.to_string()), //
             ),
             1.0,
         )
@@ -218,7 +225,7 @@ fn build_calc() -> impl Widget<AppData> {
                 digit_button('8'),
                 digit_button('9'),
                 op_button_label("tan".to_string()),
-                op_button_label_id("×".to_string(), "*".to_string()),
+                op_button_label(EXP_UNIT_NAME_MUL.to_string()),
             ),
             1.0,
         )
@@ -229,7 +236,7 @@ fn build_calc() -> impl Widget<AppData> {
                 digit_button('5'),
                 digit_button('6'),
                 op_button_label("cos".to_string()),
-                op_button_label_id("−".to_string(), "-".to_string()),
+                op_button_label(EXP_UNIT_NAME_SUB.to_string()),
             ),
             1.0,
         )
@@ -240,7 +247,7 @@ fn build_calc() -> impl Widget<AppData> {
                 digit_button('2'),
                 digit_button('3'),
                 op_button_label("sin".to_string()),
-                op_button_label("+".to_string()),
+                op_button_label(EXP_UNIT_NAME_ADD.to_string()),
             ),
             1.0,
         )
@@ -249,8 +256,8 @@ fn build_calc() -> impl Widget<AppData> {
             flex_row(
                 digit_button('0'),
                 op_button_label(".".to_string()),
-                op_button_label("√".to_string()),
-                op_button_label_id("x²".to_string(), "²".to_string()),
+                op_button_label(EXP_UNIT_NAME_SQRT.to_string()),
+                op_button_label_id("x²".to_string(), EXP_UNIT_NAME_SQR.to_string()),
                 op_feature(Feature::Eval),
             ),
             1.0,

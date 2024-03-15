@@ -13,6 +13,7 @@ pub struct Calculator {
     temp_history: String,
     input_tokens: Vec<String>,
     memory: Option<String>,
+    is_operand_last: bool,
 }
 pub enum Feature {
     CE,
@@ -34,6 +35,7 @@ impl Calculator {
             temp_history: String::new(),
             last_immediate: String::new(),
             memory: None,
+            is_operand_last: false,
         }
     }
 
@@ -56,13 +58,23 @@ impl Calculator {
         Ok(Some(self.operand_token.clone()))
     }
 
+    fn put_functor(&mut self, token: String) -> Result<Option<String>, String> {
+        let res = self.evaluator.push_functor(token, self.is_operand_last);
+        self.is_operand_last = match res {
+            Ok(Some(_)) => self.evaluator.get_last_exp_token_arg_count() == 1,
+            _ => false
+        };
+        res
+    }
+
     fn put_token(&mut self, token: String) -> Result<Option<String>, String> {
         if is_decimal(token.as_str()) {
             self.evaluator.push_operand (token.clone());
-            Ok(Some(token))
+            self.is_operand_last = true;
+            Ok(Some(token))            
         }
-        else {
-            self.evaluator.push_functor(token)
+        else {            
+            self.put_functor(token)
         }
     }
 
@@ -73,7 +85,7 @@ impl Calculator {
             self.last_result.clear();
         }
         if !self.operand_token.is_empty() {
-            self.put_token(self.operand_token.clone());
+            let _ = self.put_token(self.operand_token.clone());
             put_str.replace(self.operand_token.clone());
             self.input_tokens.push(self.operand_token.clone());
             self.operand_token.clear();
@@ -82,45 +94,10 @@ impl Calculator {
     }
 
     fn expression_op_input(&mut self, op_name: &String) -> Result<Option<String>, String> {
-        let funtor_opt = FUNCTION_LIB.get_functor(op_name);
-        let mut prefer_op_fisrt = false;
-        match funtor_opt {
-            Some(f) => {
-                if f.id() == ID_SQR {     
-                    let _ = self.push_temp_input();           
-                }
-                else if f.arg_count() == 1 {
-                    prefer_op_fisrt = true;
-                }
-                else if f.id() == ID_OPEN_BRACKET {
-                    self.operand_token.clear();
-                    self.last_result.clear();
-                }
-                else {
-                    let _ = self.push_temp_input();
-                }
-            },
-            None => {
-                let _ = self.push_temp_input();
-            }
-        };
-       
-        let res = self.evaluator.push_functor(op_name.clone());
+        let _ = self.push_temp_input();
+        let res = self.put_functor(op_name.clone());
         self.input_tokens.push(op_name.clone());
-
-        if prefer_op_fisrt {
-            let res = self.push_temp_input();
-            Ok(res)
-        }
-        else {
-            match res {
-                Err(e) => Err(e),
-                Ok(t) => {
-                    Ok(t.map(|v| v.to_string()))
-                }
-            }
-        }
-        
+        return res;
     }
 
     pub fn build_history(&self) -> String {
@@ -219,8 +196,7 @@ impl Calculator {
                         self.last_immediate = self.last_result.clone();
                         // reset the evaluator after evaluation
                         self.evaluator = ExpressionBuilder::new();
-
-                        self.temp_history = self.build_history() + " =";
+                        self.temp_history = e.to_string() + " =";
                         self.operand_token.clear();
                         self.input_tokens.clear();
 
@@ -315,6 +291,7 @@ impl Calculator {
         self.input_tokens.clear();
         self.evaluator = ExpressionBuilder::new();
         self.temp_history.clear();
+        self.is_operand_last = false;
 
         Ok(Some(self.last_result.clone()))
     }
