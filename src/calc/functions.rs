@@ -22,10 +22,10 @@ pub const ID_CLOSE_BRACKET: FunctionId = 14;
 pub const ID_SQR: FunctionId = 15;
 pub const ID_INV: FunctionId = 16;
 
-const PRIODITY_ADDITIVE: i32 = 6;
-const PRIODITY_MULTIPLICATIVE: i32 = 5;
-const PRIODITY_USER_FUNCTION: i32 = 2;
-const PRIODITY_UNARY_OP: i32 = 3;
+pub const PRIODITY_ADDITIVE: i32 = 6;
+pub const PRIODITY_MULTIPLICATIVE: i32 = 5;
+pub const PRIODITY_USER_FUNCTION: i32 = 2;
+pub const PRIODITY_UNARY_OP: i32 = 3;
 /// A trait for a function that can be executed.
 pub trait Functor {
     fn execute(&self);
