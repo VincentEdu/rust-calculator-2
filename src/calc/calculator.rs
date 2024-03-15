@@ -1,10 +1,11 @@
 use std::collections::HashMap;
+use std::f32::consts::E;
 use super::functions::*;
 
-use super::{is_decimal, Evaluator};
+use super::{is_decimal, ExpressionBuilder};
 
 pub struct Calculator {
-    evaluator: Evaluator,
+    evaluator: ExpressionBuilder,
     constants_map: HashMap<String, String>,
     operand_token: String,
     last_result: String,
@@ -25,7 +26,7 @@ pub enum Feature {
 impl Calculator {
     pub fn new() -> Self {
         Self {
-            evaluator: Evaluator::new(),
+            evaluator: ExpressionBuilder::new(),
             constants_map: HashMap::new(),
             operand_token: String::new(),
             input_tokens: Vec::new(),
@@ -55,6 +56,16 @@ impl Calculator {
         Ok(Some(self.operand_token.clone()))
     }
 
+    fn put_token(&mut self, token: String) -> Result<Option<String>, String> {
+        if is_decimal(token.as_str()) {
+            self.evaluator.push_operand (token.clone());
+            Ok(Some(token))
+        }
+        else {
+            self.evaluator.push_functor(token)
+        }
+    }
+
     fn push_temp_input(&mut self) -> Option<String> {
         let mut put_str : Option<String> = None;
         if !self.last_result.is_empty() {
@@ -62,7 +73,7 @@ impl Calculator {
             self.last_result.clear();
         }
         if !self.operand_token.is_empty() {
-            let _ = self.evaluator.put_token(&self.operand_token);
+            self.put_token(self.operand_token.clone());
             put_str.replace(self.operand_token.clone());
             self.input_tokens.push(self.operand_token.clone());
             self.operand_token.clear();
@@ -94,7 +105,7 @@ impl Calculator {
             }
         };
        
-        let res = self.evaluator.put_token(op_name);
+        let res = self.evaluator.push_functor(op_name.clone());
         self.input_tokens.push(op_name.clone());
 
         if prefer_op_fisrt {
@@ -114,10 +125,7 @@ impl Calculator {
 
     pub fn build_history(&self) -> String {
         if self.temp_history.is_empty() {
-            let mut history = String::new();
-            for token in &self.input_tokens {
-                history.push_str(token);
-            }
+            let mut history = self.evaluator.to_exp_string();
             history.push_str(&self.operand_token);
             history
         }
@@ -175,64 +183,80 @@ impl Calculator {
         }
     }
 
+    fn eval_error(&mut self, temp_token_updated: bool, err: String) -> Result<Option<String>, String> {
+         // reset the evaluator due to it may damaged by evaluation
+         self.evaluator = ExpressionBuilder::new();
+
+         // recover evaluator to state before evaluation
+         if temp_token_updated {
+             self.operand_token = self.input_tokens.pop().unwrap();
+         }
+
+         let x = self.input_tokens.clone();
+         x.iter().for_each(|t| {
+             let _ = self.put_token(t.clone());
+         });         
+         // return none like nothing happened
+         Ok(None)
+    }
+
     fn eval(&mut self) -> Result<Option<String>, String> {
         let mut temp_token_updated = false;
         if !self.operand_token.is_empty() {
-            let _ = self.evaluator.put_token(&self.operand_token);
+            let _ = self.evaluator.push_operand(self.operand_token.clone());
             self.input_tokens.push(self.operand_token.clone());
             self.operand_token.clear();
             temp_token_updated = true;
         }
-        let res = self.evaluator.evaluate();
+        let res = self.evaluator.finish();
         match res {
-            Some(v) => {
+            Ok(e) => {
                 // store the final result so that it can be used as the begin of next expression
-                self.last_result = v.to_string();
-                self.last_immediate = self.last_result.clone();
-                // reset the evaluator after evaluation
-                self.evaluator = Evaluator::new();
+                let vr = e.execute();
+                match vr {
+                    Ok(v) => {
+                        self.last_result = v.to_string();
+                        self.last_immediate = self.last_result.clone();
+                        // reset the evaluator after evaluation
+                        self.evaluator = ExpressionBuilder::new();
 
-                self.temp_history = self.build_history() + " =";
-                self.operand_token.clear();
-                self.input_tokens.clear();                
+                        self.temp_history = self.build_history() + " =";
+                        self.operand_token.clear();
+                        self.input_tokens.clear();
 
-                // return the result in String
-                Ok(Some(self.last_result.clone()))
+                        // return the result in String
+                        Ok(Some(self.last_result.clone()))
+                    },
+                    Err(s) => {
+                        self.eval_error(temp_token_updated, s)
+                    }
+                }
             },
-            None => {
-                // reset the evaluator due to it may damaged by evaluation
-                self.evaluator = Evaluator::new();
-
-                // recover evaluator to state before evaluation
-                if temp_token_updated {
-                    self.operand_token = self.input_tokens.pop().unwrap();
-                }
-                for token in &self.input_tokens  {
-                    let _ = self.evaluator.put_token(token);
-                }
-                // return none like nothing happened
-                Ok(None)
+            Err(s) => {
+                self.eval_error(temp_token_updated, s)
             }
         }
     }
 
     fn recaculate_after_delete(&mut self) -> Result<Option<String>, String> {
         // reset the evaluator due to its state is one step forward
-        self.evaluator = Evaluator::new();
+        self.evaluator = ExpressionBuilder::new();
 
         // recover evaluator to current state of inputs
         let mut results = Vec::new();
-        for token in &self.input_tokens  {
-            let last_res = self.evaluator.put_token(token);
+
+        let x = self.input_tokens.clone();
+        for token in x  {
+            let last_res = self.put_token(token);
             results.push(last_res);
         }
 
         if self.operand_token.is_empty() {
-            let mut last_val = 0.0;
+            let mut last_val = String::new();
             let i_opt = results.iter().rev().position(|r| {
                 match r {
                     Ok(Some(v)) => {
-                        last_val = *v;
+                        last_val = v.clone();
                         true
                     },
                     _ => false
@@ -241,7 +265,7 @@ impl Calculator {
             
             match i_opt {
                 Some(_) => {
-                    Ok(Some(last_val.to_string()))
+                    Ok(Some(last_val))
                 },
                 None => Ok(Some("0".to_string()))
             }
@@ -289,7 +313,7 @@ impl Calculator {
         self.last_immediate = "0".to_string();
         self.operand_token.clear();
         self.input_tokens.clear();
-        self.evaluator = Evaluator::new();
+        self.evaluator = ExpressionBuilder::new();
         self.temp_history.clear();
 
         Ok(Some(self.last_result.clone()))
@@ -299,15 +323,7 @@ impl Calculator {
         self.operand_token.clear();
         self.last_result.clear();
 
-        let ctx = self.evaluator.excution_context.borrow();
-        let last_val_opt = ctx.execution_stack.top_val();
-        match last_val_opt {
-            Some(v) => {
-                self.last_immediate = v.to_string();
-                Ok(Some(self.last_immediate.clone()))
-            },
-            None => Ok(Some("0".to_string()))
-        }
+        self.evaluator.eval_immediate().map(|v| Some(v.to_string()))
     }
 
     fn memory_store(&mut self) -> Result<Option<String>, String> {

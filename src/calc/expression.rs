@@ -1051,12 +1051,12 @@ impl ExpressionBuilder {
         self.operator_stack.push(op);
     }
 
-    fn build_top_op_tree(&mut self) -> bool {
+    fn build_top_op_tree(&mut self) -> Result<Option<String>, String> {
         let mut op = self.operator_stack.pop().unwrap();        
         let mut args = op.arg_count();
         while args > 0 {
             if self.operand_stack.len() == 0 {
-                return false
+                return Err("Invalid expression".to_string());
             }
             let operand = self.operand_stack.pop().unwrap();
             op.push_operand(operand);
@@ -1064,35 +1064,38 @@ impl ExpressionBuilder {
             args -= 1;
         }
 
+        let imediate_result = op.execute();
+
         // issue: https://github.com/rust-lang/rust/issues/65991
         // self.operand_stack.push(op);
         // use ExpOpUnit::as_excutable_unit to overcome the issue
         self.operand_stack.push(op.as_excutable_unit());
-        return true;
+
+        return imediate_result.map(|v| Some(v.to_string()));
     }
 
-    pub fn build_tree_inside_bracket(&mut self) -> bool {
+    pub fn build_tree_inside_bracket(&mut self) -> Result<Option<String>, String> {
         while self.operator_stack.len() > 0 {
             let id = self.top_op().unwrap().get_op_base().id;
             let x = self.build_top_op_tree();
-            if x == false {
-                return false;
+            if x.is_err() {
+                return x;
             }
             if ID_OPEN_BRACKET == id {
-                return true;
+                return x;
             }
         }
-        false
+        Err("Missing open bracket".to_string())
     }
 
-    pub fn push_functor(&mut self, name: String) -> bool {
+    pub fn push_functor(&mut self, name: String) -> Result<Option<String>, String> {
         if name == EXP_UNIT_NAME_CLOSE_BRK { // close bracket
             return self.build_tree_inside_bracket();
         }
 
         let op_opt = EXP_OP_LIB.get_functor(&name);
         if op_opt.is_none() {
-            return false;
+            return Err("No functor found".to_string());
         }
         let op = op_opt.unwrap();
 
@@ -1104,26 +1107,26 @@ impl ExpressionBuilder {
 
                 if op_base.id == ID_OPEN_BRACKET {
                     self.push_op(op);
-                    return true;
+                    return Ok(None);
                 }
 
                 if top_base.precedence > op_base.precedence {
                     self.push_op(op);
-                    return true;                    
+                    return Ok(None);                    
                 }
                 let x = self.build_top_op_tree();
-                if x == false {
-                    return false;
+                if x.is_err() {
+                    return x;
                 }
                 self.push_op(op);
-                return true;
+                return x;
             },
             None => {
                 self.operator_stack.push(op);
+                Ok(None)
             }
             
-        }        
-        return true;
+        }
     }
 
     pub fn push_operand(&mut self, token: String) -> bool {
@@ -1152,8 +1155,8 @@ impl ExpressionBuilder {
     pub fn finish(&mut self) -> Result<Expression, String> {
         while self.operator_stack.len() > 0 {
             let x = self.build_top_op_tree();
-            if x == false {
-                return Err("Invalid expression".to_string());
+            if x.is_err() {
+                return Err(x.err().unwrap());
             }
         }
         if self.operand_stack.len() != 1 {
@@ -1162,6 +1165,13 @@ impl ExpressionBuilder {
         Ok(Expression {
             root: self.operand_stack.pop(),
         })
+    }
+
+    pub fn eval_immediate(&mut self) -> Result<f64, String> {
+        match self.operand_stack.last() {
+            Some(op) => op.execute(),
+            None => Err("Incomplete expression".to_string())            
+        }
     }
 }
 
