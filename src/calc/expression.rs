@@ -692,7 +692,7 @@ impl ExpUnit for SquareFunc {
                 self.exp_name().to_string()
             },
             Some(op_1) => {
-                if op_1.exp_name() == EXP_UNIT_NAME_CONSTANT {
+                if op_1.exp_name() == EXP_UNIT_NAME_CONSTANT || op_1.exp_name() == EXP_UNIT_NAME_OPEN_BRK {
                     format!("{}{}", op_1.to_string(), self.exp_name())
                 }
                 else {
