@@ -109,7 +109,7 @@ impl ExpUnit for ConstantUnit {
     }
 
     fn exp_name(&self) -> &str {
-        "constant"
+        EXP_UNIT_NAME_CONSTANT
     }
 
     fn get_exp_unit_base(&self) -> &ExpUnitBase {
@@ -349,6 +349,10 @@ impl ExpOpUnit for CollectOperator {
         new_instance.base._1 = self.base._1.take();
         new_instance.set_exp_idx(self.get_exp_idx());
         Box::new(new_instance)
+    }
+
+    fn is_operator(&self) -> bool {
+        true
     }
 }
 
@@ -688,7 +692,12 @@ impl ExpUnit for SquareFunc {
                 self.exp_name().to_string()
             },
             Some(op_1) => {
-                format!("{}{}", op_1.to_string(), self.exp_name())
+                if op_1.exp_name() == EXP_UNIT_NAME_CONSTANT {
+                    format!("{}{}", op_1.to_string(), self.exp_name())
+                }
+                else {
+                    format!("({}){}", op_1.to_string(), self.exp_name())
+                }
             }
         }
     }
@@ -925,6 +934,10 @@ impl ExpOpUnit for AddOperator {
         new_instance.set_exp_idx(self.get_exp_idx());
         Box::new(new_instance)
     }
+
+    fn is_operator(&self) -> bool {
+        true
+    }
 }
 
 impl ExpUnit for AddOperator {
@@ -1002,6 +1015,9 @@ impl ExpOpUnit for SubOperator {
         new_instance.base._2 = self.base._2.take();
         new_instance.set_exp_idx(self.get_exp_idx());
         Box::new(new_instance)
+    }
+    fn is_operator(&self) -> bool {
+        true
     }
 }
 
@@ -1081,6 +1097,10 @@ impl ExpOpUnit for MulOperator {
         new_instance.set_exp_idx(self.get_exp_idx());
         Box::new(new_instance)
     }
+
+    fn is_operator(&self) -> bool {
+        true
+    }
 }
 
 impl ExpUnit for MulOperator {
@@ -1154,7 +1174,6 @@ impl ExpOpUnit for DivOperator {
     fn arg_count(&self) -> i32 {
         BinaryFunctionUnit::arg_count(self)
     }
-
     
     fn as_excutable_unit(&mut self) -> Box<dyn ExcutableUnit> {
         let mut new_instance = DivOperator::new();
@@ -1162,6 +1181,10 @@ impl ExpOpUnit for DivOperator {
         new_instance.base._2 = self.base._2.take();
         new_instance.set_exp_idx(self.get_exp_idx());
         Box::new(new_instance)
+    }
+
+    fn is_operator(&self) -> bool {
+        true
     }
 }
 
@@ -1186,7 +1209,6 @@ impl ExpUnit for DivOperator {
 
 pub struct ExpressionBuilder {
     token_count: i32,
-    last_op_count: i32,
     operand_stack: Vec<Box<dyn ExcutableUnit>>,
     operator_stack: Vec<Box<dyn ExpOpUnit>>,
 }
@@ -1195,7 +1217,6 @@ impl ExpressionBuilder {
     pub fn new() -> Self {
         Self {
             token_count: 0,
-            last_op_count: -2,
             operator_stack: Vec::new(),
             operand_stack: Vec::new(),            
         }
@@ -1267,26 +1288,40 @@ impl ExpressionBuilder {
         self.operator_stack.push(op);
     }
 
-    pub fn push_functor(&mut self, name: String, prefer_eval: bool, allow_auto_complete: bool) -> Result<Option<String>, String> {
+    pub fn push_functor(&mut self, name: String, allow_auto_complete: bool) -> Result<Option<String>, String> {
         self.token_count += 1;
 
         if name == EXP_UNIT_NAME_CLOSE_BRK { // close bracket
-            self.last_op_count = 1;
             return self.build_tree_inside_bracket();
         }        
 
         let op_opt = EXP_OP_LIB.get_functor(&name);
         if op_opt.is_none() {
-            self.last_op_count = -1;
             return Err("No functor found".to_string());
         }
         let mut op = op_opt.unwrap();        
         op.set_exp_idx(self.token_count);
-        self.last_op_count = op.arg_count();
         let op_base = op.get_op_base();
 
+        let top_op = self.top_op();
+
+        let prefer_eval = self.can_eval_unary_op();
+
         // if the operator is a unary operator, and the caller want to evaluate it now                
-        if prefer_eval && op.arg_count() == 1 && op_base.id != ID_OPEN_BRACKET {
+        if prefer_eval && op.arg_count() == 1 && op_base.id != ID_OPEN_BRACKET {            
+            let op_base = op.get_op_base();
+            match top_op {
+                Some(top) => {
+                    let top_base = top.get_op_base();
+                    if top_base.precedence <= op_base.precedence {
+                        let x = self.build_top_op_tree(-1);
+                        if x.is_err() {
+                            return x;
+                        }
+                    }
+                },
+                None => {}
+            }
             self.push_op(op);
             return self.build_top_op_tree(-1);
         }
@@ -1300,11 +1335,10 @@ impl ExpressionBuilder {
             exp_auto_completed = allow_auto_complete;
         }
 
-        let top_op = self.top_op();
+        
         match top_op {
             Some(top) => {
-                let top_base = top.get_op_base();                
-
+                let top_base = top.get_op_base();
                 if op_base.id == ID_OPEN_BRACKET {
                     self.push_op(op);
                     return Ok(None);
@@ -1333,9 +1367,30 @@ impl ExpressionBuilder {
         }
     }
 
+    pub fn prepare_to_push_operand(&mut self) -> bool {
+        if self.operator_stack.len() == 0 {
+            return false;
+        }
+
+        let top_op = self.top_op().unwrap();
+        let top_operand_opt = self.operand_stack.last();
+        let should_auto_complete = match top_operand_opt {
+            Some(top_operand) => {
+                // last exp token should be not an operator
+                top_op.get_exp_idx() > top_operand.get_exp_idx() && !top_op.is_operator()
+            },
+            None => !top_op.is_operator()
+        };
+
+        if should_auto_complete {
+            self.add_open_bracket();
+        }
+
+        should_auto_complete
+    }
+
     pub fn push_operand(&mut self, token: String) -> bool {
         self.token_count += 1;
-        self.last_op_count = 1;
 
         let res = token.parse::<f64>();
         match res {
@@ -1396,11 +1451,6 @@ impl ExpressionBuilder {
         })
     }
 
-    pub fn get_last_exp_token_arg_count(&self) -> i32 {
-        // work around
-        self.last_op_count
-    }
-
     pub fn tokenize(input: String) -> Vec<String> {
         let mut tokens = Vec::new();
         let mut token = String::new();
@@ -1457,7 +1507,21 @@ impl ExpressionBuilder {
         }
     
         true
-    }    
+    }
+
+    pub fn can_eval_unary_op(&self) -> bool {
+        if self.operand_stack.len() <= 0 {
+            return false;
+        }
+        if self.operator_stack.len() == 0 {
+            return true;
+        }
+
+        let top_op = self.top_op().unwrap();
+        let top_operand = self.operand_stack.last().unwrap();
+        
+        return top_op.get_exp_idx() < top_operand.get_exp_idx();
+    }
 }
 
 

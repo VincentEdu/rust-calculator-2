@@ -14,7 +14,6 @@ pub struct Calculator {
     cached_history: String,
     input_tokens: Vec<String>,
     memory: Option<String>,
-    is_operand_last: bool,
     allow_auto_complete: bool,
     need_sync_tokens: bool,
 }
@@ -38,7 +37,6 @@ impl Calculator {
             cached_history: String::new(),
             last_immediate: String::new(),
             memory: None,
-            is_operand_last: false,
             allow_auto_complete: true,
             need_sync_tokens: false,
         }
@@ -48,6 +46,10 @@ impl Calculator {
         if !self.last_result.is_empty() {
             // clear last result if user input first operand of the expression
             self.last_result.clear();
+        }
+        // for auto complete
+        if self.operand_token.is_empty() {
+            self.evaluator.prepare_to_push_operand();
         }
         self.operand_token.push(*c);
         Ok(Some(self.operand_token.clone()))
@@ -59,18 +61,20 @@ impl Calculator {
         // clear last result we don't need it anymore
         self.last_result.clear();
 
+        // for auto complete
+        self.evaluator.prepare_to_push_operand();
+
         self.operand_token = const_val.clone();
         Ok(Some(self.operand_token.clone()))
     }
 
     fn put_functor(&mut self, token: String) -> Result<Option<String>, String> {
-        let res = self.evaluator.push_functor(token, self.is_operand_last, self.allow_auto_complete);
-        self.is_operand_last = match res {
+        let res = self.evaluator.push_functor(token, self.allow_auto_complete);
+        match res {
             Ok(Some(_)) => {
                 self.need_sync_tokens = true;
-                self.evaluator.get_last_exp_token_arg_count() == 1
             },
-            _ => false
+            _ => {}
         };
         res
     }
@@ -78,7 +82,6 @@ impl Calculator {
     fn put_token(&mut self, token: String) -> Result<Option<String>, String> {
         if ExpressionBuilder::is_decimal(token.as_str()) {
             self.evaluator.push_operand (token.clone());
-            self.is_operand_last = true;
             Ok(Some(token))            
         }
         else {            
@@ -319,7 +322,6 @@ impl Calculator {
         self.input_tokens.clear();
         self.evaluator = ExpressionBuilder::new();
         self.cached_history.clear();
-        self.is_operand_last = false;
         self.need_sync_tokens = false;
 
         Ok(Some(self.last_result.clone()))
