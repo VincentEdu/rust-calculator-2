@@ -161,6 +161,9 @@ pub trait ExpOpUnit : ExcutableUnit {
     fn push_operand(&mut self, operand: Box<dyn ExcutableUnit>) -> i32;
     fn arg_count(&self) -> i32;
     fn as_excutable_unit(&mut self) -> Box<dyn ExcutableUnit>;
+    fn is_operator(&self) -> bool {
+        false
+    }
 }
 
 pub trait BinaryFunctionUnit: ExpOpUnit {
@@ -341,7 +344,6 @@ impl ExpOpUnit for CollectOperator {
         UnaryFunctionUnit::arg_count(self)
     }
 
-    
     fn as_excutable_unit(&mut self) -> Box<dyn ExcutableUnit> {
         let mut new_instance = CollectOperator::new();
         new_instance.base._1 = self.base._1.take();
@@ -428,7 +430,6 @@ impl ExpOpUnit for SinFunc {
         UnaryFunctionUnit::arg_count(self)
     }
 
-    
     fn as_excutable_unit(&mut self) -> Box<dyn ExcutableUnit> {
         let mut new_instance = SinFunc::new();
         new_instance.base._1 = self.base._1.take();
@@ -658,13 +659,16 @@ impl ExpOpUnit for SquareFunc {
     fn arg_count(&self) -> i32 {
         UnaryFunctionUnit::arg_count(self)
     }
-
     
     fn as_excutable_unit(&mut self) -> Box<dyn ExcutableUnit> {
         let mut new_instance = SquareFunc::new();
         new_instance.base._1 = self.base._1.take();
         new_instance.set_exp_idx(self.get_exp_idx());
         Box::new(new_instance)
+    }
+
+    fn is_operator(&self) -> bool {
+        true
     }
 }
 
@@ -745,13 +749,16 @@ impl ExpOpUnit for SqrtFunc {
     fn arg_count(&self) -> i32 {
         UnaryFunctionUnit::arg_count(self)
     }
-
     
     fn as_excutable_unit(&mut self) -> Box<dyn ExcutableUnit> {
         let mut new_instance = SqrtFunc::new();
         new_instance.base._1 = self.base._1.take();
         new_instance.set_exp_idx(self.get_exp_idx());
         Box::new(new_instance)
+    }
+
+    fn is_operator(&self) -> bool {
+        true
     }
 }
 
@@ -829,6 +836,10 @@ impl ExpOpUnit for InvFunc {
         new_instance.base._1 = self.base._1.take();
         new_instance.set_exp_idx(self.get_exp_idx());
         Box::new(new_instance)
+    }
+
+    fn is_operator(&self) -> bool {
+        true
     }
 }
 
@@ -1241,15 +1252,28 @@ impl ExpressionBuilder {
         }
         Err("Missing open bracket".to_string())
     }
-    
 
-    pub fn push_functor(&mut self, name: String, prefer_eval: bool) -> Result<Option<String>, String> {
+    pub fn just_return_imediate_result(&self) -> Result<Option<String>, String> {
+        match self.operand_stack.last() {
+            Some(op) => Ok(Some(op.execute().unwrap().to_string())),
+            None => Ok(Some("0".to_string()))
+        }
+    }
+
+    fn add_open_bracket(&mut self) {
+        let mut op = Box::new(CollectOperator::new());
+        self.token_count += 1;
+        op.set_exp_idx(self.token_count);
+        self.operator_stack.push(op);
+    }
+
+    pub fn push_functor(&mut self, name: String, prefer_eval: bool, allow_auto_complete: bool) -> Result<Option<String>, String> {
         self.token_count += 1;
 
         if name == EXP_UNIT_NAME_CLOSE_BRK { // close bracket
             self.last_op_count = 1;
             return self.build_tree_inside_bracket();
-        }
+        }        
 
         let op_opt = EXP_OP_LIB.get_functor(&name);
         if op_opt.is_none() {
@@ -1267,6 +1291,15 @@ impl ExpressionBuilder {
             return self.build_top_op_tree(-1);
         }
 
+        // flag to indicate that the expression builder has changed the expression itself
+        // then it should return the imeidate result to tell the caller update it owns expression by calling 'to_exp_string' method
+        let mut exp_auto_completed = false;
+
+        // check if we should put the open bracket for user function (sin, cos, tan, etc.)
+        if prefer_eval == false && !op.is_operator() && op_base.id != ID_OPEN_BRACKET {           
+            exp_auto_completed = allow_auto_complete;
+        }
+
         let top_op = self.top_op();
         match top_op {
             Some(top) => {
@@ -1281,13 +1314,20 @@ impl ExpressionBuilder {
                     let x = self.build_top_op_tree(-1);
                     self.push_op(op);            
                     return x;
-                }
+                }                                
                 self.push_op(op);
-                return Ok(None);
+                if exp_auto_completed {
+                    self.add_open_bracket();
+                }
+                
+                return if exp_auto_completed {self.just_return_imediate_result()} else {Ok(None)};
             },
             None => {
-                self.operator_stack.push(op);
-                Ok(None)
+                self.push_op(op);
+                if exp_auto_completed {
+                    self.add_open_bracket();
+                }
+                return if exp_auto_completed {self.just_return_imediate_result()} else {Ok(None)};
             }
             
         }
@@ -1354,13 +1394,6 @@ impl ExpressionBuilder {
         Ok(Expression {
             root: self.operand_stack.pop(),
         })
-    }
-
-    pub fn eval_immediate(&mut self) -> Result<f64, String> {
-        match self.operand_stack.last() {
-            Some(op) => op.execute(),
-            None => Err("Incomplete expression".to_string())            
-        }
     }
 
     pub fn get_last_exp_token_arg_count(&self) -> i32 {

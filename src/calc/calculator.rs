@@ -3,6 +3,7 @@ use std::f32::consts::E;
 use super::functions::*;
 
 use super::ExpressionBuilder;
+use super::EXP_UNIT_NAME_OPEN_BRK;
 
 pub struct Calculator {
     evaluator: ExpressionBuilder,
@@ -14,6 +15,7 @@ pub struct Calculator {
     input_tokens: Vec<String>,
     memory: Option<String>,
     is_operand_last: bool,
+    allow_auto_complete: bool,
     need_sync_tokens: bool,
 }
 pub enum Feature {
@@ -37,6 +39,7 @@ impl Calculator {
             last_immediate: String::new(),
             memory: None,
             is_operand_last: false,
+            allow_auto_complete: true,
             need_sync_tokens: false,
         }
     }
@@ -61,7 +64,7 @@ impl Calculator {
     }
 
     fn put_functor(&mut self, token: String) -> Result<Option<String>, String> {
-        let res = self.evaluator.push_functor(token, self.is_operand_last);
+        let res = self.evaluator.push_functor(token, self.is_operand_last, self.allow_auto_complete);
         self.is_operand_last = match res {
             Ok(Some(_)) => {
                 self.need_sync_tokens = true;
@@ -107,7 +110,12 @@ impl Calculator {
     }
 
     fn expression_op_input(&mut self, op_name: &String) -> Result<Option<String>, String> {
-        let _ = self.push_temp_input();
+        if !self.last_result.is_empty() && op_name == EXP_UNIT_NAME_OPEN_BRK {
+            self.last_result.clear();
+        }
+        else {
+            let _ = self.push_temp_input();
+        }
         let res = self.put_functor(op_name.clone());
         if self.need_sync_tokens {
             self.input_tokens = ExpressionBuilder::tokenize(self.evaluator.to_exp_string());
@@ -235,16 +243,19 @@ impl Calculator {
 
     fn recaculate_after_delete(&mut self) -> Result<Option<String>, String> {
         // reset the evaluator due to its state is one step forward
+        let mut allow_auto_complete_bck = self.allow_auto_complete;        
         self.evaluator = ExpressionBuilder::new();
 
         // recover evaluator to current state of inputs
         let mut results = Vec::new();
 
+        self.allow_auto_complete = false;
         let x = self.input_tokens.clone();
         for token in x  {
             let last_res = self.put_token(token);
             results.push(last_res);
         }
+        self.allow_auto_complete = allow_auto_complete_bck;
 
         if self.operand_token.is_empty() {
             let mut last_val = String::new();
@@ -290,7 +301,11 @@ impl Calculator {
                     return Ok(None);
                 }
                 // take the last token from input tokens
-                self.input_tokens.pop();
+                let token = self.input_tokens.pop().unwrap();
+                if ExpressionBuilder::is_decimal(&token) {
+                    self.operand_token = token;
+                    self.operand_token.pop();
+                }
                 
                 self.recaculate_after_delete()
             }            
@@ -314,7 +329,7 @@ impl Calculator {
         self.operand_token.clear();
         self.last_result.clear();
 
-        self.evaluator.eval_immediate().map(|v| Some(v.to_string()))
+        self.evaluator.just_return_imediate_result()
     }
 
     fn memory_store(&mut self) -> Result<Option<String>, String> {
