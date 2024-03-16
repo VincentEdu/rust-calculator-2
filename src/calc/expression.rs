@@ -1367,6 +1367,64 @@ impl ExpressionBuilder {
         // work around
         self.last_op_count
     }
+
+    pub fn tokenize(input: String) -> Vec<String> {
+        let mut tokens = Vec::new();
+        let mut token = String::new();
+        for c in input.chars() {
+            if c.is_alphanumeric() || c == '.' {
+                token.push(c);
+            }
+            else {
+                if !token.is_empty() {
+                    tokens.push(token);
+                    token = String::new();
+                }
+                tokens.push(c.to_string());
+            }
+        }
+        if !token.is_empty() {
+            tokens.push(token.clone());
+        }
+        tokens
+    }
+
+    pub fn is_decimal(s : &str) -> bool {
+        if s.is_empty() {
+            return false;
+        }    
+        let mut iterator = s.chars();
+        let mut oc = iterator.next();
+        let mut c = oc.unwrap();    
+        if c == '-' || c == '+' {
+            if s.len() == 1 {
+                return false;
+            }
+            oc = iterator.next();
+        }
+        let mut i = 0;
+        let mut has_dot = false;
+        while oc.is_some() {
+            c = oc.unwrap();
+            if c == '.' {
+                if has_dot { // dot should has only one
+                    return false;
+                }
+                has_dot = true;
+                if i == 0 { // dot is not allow to be first character
+                    return false;
+                }
+            }
+            else if !c.is_ascii_digit() {
+                return false;
+            }
+            
+            oc = iterator.next();
+            i = i + 1;
+        }
+    
+        true
+    }    
 }
 
 

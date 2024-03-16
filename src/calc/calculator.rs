@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::f32::consts::E;
 use super::functions::*;
 
-use super::{is_decimal, ExpressionBuilder};
+use super::ExpressionBuilder;
 
 pub struct Calculator {
     evaluator: ExpressionBuilder,
@@ -10,10 +10,11 @@ pub struct Calculator {
     operand_token: String,
     last_result: String,
     last_immediate: String,
-    temp_history: String,
+    cached_history: String,
     input_tokens: Vec<String>,
     memory: Option<String>,
     is_operand_last: bool,
+    need_sync_tokens: bool,
 }
 pub enum Feature {
     CE,
@@ -32,10 +33,11 @@ impl Calculator {
             operand_token: String::new(),
             input_tokens: Vec::new(),
             last_result: "0".to_string(),
-            temp_history: String::new(),
+            cached_history: String::new(),
             last_immediate: String::new(),
             memory: None,
             is_operand_last: false,
+            need_sync_tokens: false,
         }
     }
 
@@ -61,14 +63,17 @@ impl Calculator {
     fn put_functor(&mut self, token: String) -> Result<Option<String>, String> {
         let res = self.evaluator.push_functor(token, self.is_operand_last);
         self.is_operand_last = match res {
-            Ok(Some(_)) => self.evaluator.get_last_exp_token_arg_count() == 1,
+            Ok(Some(_)) => {
+                self.need_sync_tokens = true;
+                self.evaluator.get_last_exp_token_arg_count() == 1
+            },
             _ => false
         };
         res
     }
 
     fn put_token(&mut self, token: String) -> Result<Option<String>, String> {
-        if is_decimal(token.as_str()) {
+        if ExpressionBuilder::is_decimal(token.as_str()) {
             self.evaluator.push_operand (token.clone());
             self.is_operand_last = true;
             Ok(Some(token))            
@@ -87,7 +92,15 @@ impl Calculator {
         if !self.operand_token.is_empty() {
             let _ = self.put_token(self.operand_token.clone());
             put_str.replace(self.operand_token.clone());
-            self.input_tokens.push(self.operand_token.clone());
+
+            if self.need_sync_tokens {
+                self.input_tokens = ExpressionBuilder::tokenize(self.evaluator.to_exp_string());
+                self.need_sync_tokens = false;
+            }
+            else {
+                self.input_tokens.push(self.operand_token.clone());
+            }
+            
             self.operand_token.clear();
         }
         put_str
@@ -96,18 +109,24 @@ impl Calculator {
     fn expression_op_input(&mut self, op_name: &String) -> Result<Option<String>, String> {
         let _ = self.push_temp_input();
         let res = self.put_functor(op_name.clone());
-        self.input_tokens.push(op_name.clone());
+        if self.need_sync_tokens {
+            self.input_tokens = ExpressionBuilder::tokenize(self.evaluator.to_exp_string());
+            self.need_sync_tokens = false;
+        }
+        else {
+            self.input_tokens.push(op_name.clone());
+        }
         return res;
     }
 
     pub fn build_history(&self) -> String {
-        if self.temp_history.is_empty() {
+        if self.cached_history.is_empty() {
             let mut history = self.evaluator.to_exp_string();
             history.push_str(&self.operand_token);
             history
         }
         else {
-            self.temp_history.clone()
+            self.cached_history.clone()
         }        
     }
 
@@ -115,7 +134,7 @@ impl Calculator {
         if input.is_empty() {
             return Err("Empty input".to_string());
         }
-        self.temp_history.clear();
+        self.cached_history.clear();
 
         let immediate_result: Result<Option<String>, String>;
 
@@ -156,7 +175,7 @@ impl Calculator {
             Feature::MS => self.memory_store(),
             Feature::MR => self.memory_recover(),
             Feature::Eval => self.eval(),
-            Feature::DEL => self.delete_one_char(),
+            Feature::DEL => self.delete_input(),
         }
     }
 
@@ -196,7 +215,7 @@ impl Calculator {
                         self.last_immediate = self.last_result.clone();
                         // reset the evaluator after evaluation
                         self.evaluator = ExpressionBuilder::new();
-                        self.temp_history = e.to_string() + " =";
+                        self.cached_history = e.to_string() + " =";
                         self.operand_token.clear();
                         self.input_tokens.clear();
 
@@ -252,7 +271,7 @@ impl Calculator {
         }
     }
 
-    fn delete_one_char(&mut self) -> Result<Option<String>, String> {
+    fn delete_input(&mut self) -> Result<Option<String>, String> {
 
         // try to delete one last char in temporary input...
         match self.operand_token.pop() {
@@ -271,13 +290,7 @@ impl Calculator {
                     return Ok(None);
                 }
                 // take the last token from input tokens
-                let last_token = self.input_tokens.pop().unwrap();
-
-                // make it as temporary input
-                self.operand_token = last_token;
-
-                // delete one char from temporary input
-                self.operand_token.pop();
+                self.input_tokens.pop();
                 
                 self.recaculate_after_delete()
             }            
@@ -290,8 +303,9 @@ impl Calculator {
         self.operand_token.clear();
         self.input_tokens.clear();
         self.evaluator = ExpressionBuilder::new();
-        self.temp_history.clear();
+        self.cached_history.clear();
         self.is_operand_last = false;
+        self.need_sync_tokens = false;
 
         Ok(Some(self.last_result.clone()))
     }
@@ -308,7 +322,7 @@ impl Calculator {
             return Ok(None);
         }
 
-        if is_decimal(self.last_immediate.as_str()) {
+        if ExpressionBuilder::is_decimal(self.last_immediate.as_str()) {
             self.memory.replace(self.last_immediate.clone());
         }
         Ok(None)
